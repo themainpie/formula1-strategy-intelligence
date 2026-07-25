@@ -1,0 +1,41 @@
+# ==========================================
+# Power BI
+# ==========================================
+
+# Power BI temporary and backup files
+*.tmp
+*.bak
+*.temp
+
+# Auto recovery files
+*.pbix.autosave
+
+# ==========================================
+# Python (if using scripts)
+# ==========================================
+
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# ==========================================
+# Environment files
+# ==========================================
+
+.env
+.env.*
+
+# ==========================================
+# Jupyter Notebooks
+# ==========================================
+
+.ipynb_checkpoints/
+notebooks/advanced_analytics.ipynb
+
+data/*
+!data/.gitkeep
+
+assets/*
+!assets/.gitkeep
