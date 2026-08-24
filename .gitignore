@@ -40,3 +40,5 @@ data/*
 
 assets/*
 !assets/.gitkeep
+
+sql
