@@ -32,7 +32,6 @@ env/
 # ==========================================
 
 .ipynb_checkpoints/
-notebooks/advanced_analytics.ipynb
 notebooks/test
 
 data/*
