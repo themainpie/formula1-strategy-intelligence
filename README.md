@@ -7,6 +7,7 @@
 [![Power BI](https://img.shields.io/badge/Power%20BI-F2C811?style=flat&logo=powerbi&logoColor=black)](#)
 [![Python](https://img.shields.io/badge/Python-3776AB?style=flat&logo=python&logoColor=white)](#)
 [![DAX](https://img.shields.io/badge/DAX-81%20Measures-E10600?style=flat)](#)
+[![SQL](https://img.shields.io/badge/SQL-4479A1?style=flat&logo=postgresql&logoColor=white)](#)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](#license)
 
 *Built entirely on free, native tools — Power BI Desktop, Python. No Pro/Premium license, no paid AppSource visuals.*
@@ -101,7 +102,7 @@ Raw CSVs (Kaggle: Formula 1 Race Data)
 4. **Load** — Power BI semantic model with a fully documented 81-measure DAX library.
 5. **Serve** — 8-page report with a custom dark theme and real per-team, per-driver livery colors.
 
-See [`/noteboos`](notebooks/) for the notebooks
+See [`/noteboos`](notebooks/) for the notebooks and [`/sql`](sql/) for and SQL layer, written as if this fed a waregouse istead of flat files
 
 ---
 
@@ -193,6 +194,7 @@ Star schema — **6 fact tables**, **8 dimension tables**. Full grain, relations
 
 - **Power BI Desktop** — semantic model, DAX, report layer, 100% native visuals (no Pro/Premium, no paid AppSource visuals)
 - **Python** (`pandas`, `numpy`, `scikit-learn`, `matplotlib`, `pyarrow`) — ETL, feature engineering, clustering, degradation modeling, strategy simulation
+- **SQL** — analytical query layer (window functions, CTEs, ranking) written as if served from a warehouse
 - **Power Query (M)** — transformation and star-schema shaping layer
 - **GitHub** — version control and portfolio presentation
 
@@ -208,6 +210,11 @@ Formula-1-Strategy-Intelligence/
 │   ├── Data_Dictionary.md
 │   ├── KPI_Definitions.md
 │   ├── Power_Query_Transformations.md
+│
+├── sql/
+│   ├── schema.sql
+│   ├── analytical_queries.sql
+│   └── load_data.py
 │
 ├── notebooks/
 │   ├── etl.ipynb
