@@ -40,4 +40,4 @@ data/*
 assets/*
 !assets/.gitkeep
 
-sql
+sql/f1_strategy.db
