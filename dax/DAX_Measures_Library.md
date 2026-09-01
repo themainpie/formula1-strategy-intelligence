@@ -39,8 +39,7 @@ DIVIDE ( [Total Points], [Total Races] )
 ```dax
 8. Max Possible Points =
 [Total Races] * 25
-// Simplified constant (win value); documented as an approximation since points-per-position
-// changed across eras — a full version would join a PointsSystem table keyed by season.
+
 
 9. Championship Efficiency =
 DIVIDE ( [Total Points], [Max Possible Points] )
@@ -131,17 +130,12 @@ DIVIDE ( [Fastest Lap Count], [Total Races] )
 ```dax
 22. Avg Grid Position =
 AVERAGE ( FactRaceResults[GridPosition] )
-// Actual starting position (post-penalty). Use this for race-day/start-of-race context.
 
 22b. Avg Qualifying Position =
 AVERAGE ( FactQualifying[QualifyingPosition] )
-// Raw one-lap Saturday result (pre-penalty). Use this for pure pace comparisons —
-// see the GridPosition vs QualifyingPosition distinction in docs/Data_Dictionary.md.
 
 23. Front Row Starts =
 CALCULATE ( COUNTROWS ( FactRaceResults ), FactRaceResults[GridPosition] <= 2 )
-// Deliberately Grid-based, not Qualifying-based: this is about who actually lines up
-// on the front row Sunday morning, which is a race-start reality, not a pace measure.
 
 24. Front Row to Podium Conversion =
 VAR FrontRowRaces =
@@ -150,15 +144,9 @@ VAR FrontRowPodiums =
     COUNTROWS ( FILTER ( FrontRowRaces, FactRaceResults[IsPodium] = TRUE ) )
 RETURN
 DIVIDE ( FrontRowPodiums, COUNTROWS ( FrontRowRaces ) )
-// KPI #10 (Qualifying Conversion Rate). Grid-based per the KPI's own definition —
-// this is about converting an actual starting position, not raw qualifying pace.
 
 25. Pole Positions =
 CALCULATE ( COUNTROWS ( FactQualifying ), FactQualifying[QualifyingPosition] = 1 )
-// FIXED: was FactRaceResults[GridPosition] = 1, which undercounts any driver who
-// qualified P1 but was demoted by a grid penalty before Sunday. Pole is a qualifying-
-// session record, independent of what the grid ends up looking like — must come
-// from FactQualifying, not FactRaceResults.
 
 26. Pole to Win Rate =
 VAR PoleGridDrivers =
@@ -175,14 +163,6 @@ VAR PoleWins =
     )
 RETURN
 DIVIDE ( PoleWins, PoleRaceCount )
-// FIXED: was filtering FactRaceResults[GridPosition] = 1 entirely within FactRaceResults,
-// which has the same pole-vs-grid problem as #25 above. FactQualifying and
-// FactRaceResults are NOT directly related (see docs/Data_Dictionary.md — fact tables
-// only connect through DimRace/DimDriver, never to each other), so "did the pole-sitter
-// go on to win" genuinely requires bridging two fact tables. TREATAS pushes the
-// RaceID+DriverID pairs that got pole from FactQualifying across as a virtual filter
-// on FactRaceResults — this is the correct pattern any time a measure needs to combine
-// facts from two tables that don't have a relationship between them.
 
 27. Grid-to-Finish Correlation =
 VAR AvgGrid = [Avg Grid Position]
@@ -198,12 +178,6 @@ VAR DenomFinish =
     SUMX ( FactRaceResults, ( FactRaceResults[FinishPosition] - AvgFinish ) ^ 2 )
 RETURN
 DIVIDE ( Numerator, SQRT ( DenomGrid * DenomFinish ) )
-// SIMPLIFIED: the original version filtered VALUES(FactRaceResults[ResultSK]) and then
-// referenced other FactRaceResults columns inside SUMX — this actually works in DAX
-// (column-derived tables retain lineage back to their source table when the column is a
-// unique key), but it's needlessly indirect and easy to misread as broken. Iterating
-// FactRaceResults directly does the same thing more legibly, with identical results.
-// Power BI has no native CORR(); this is the manual covariance/std-dev formula.
 // KPI #19. Powers the Page 4 circuit heatmap.
 ```
 
@@ -238,20 +212,10 @@ AVERAGEX (
     FILTER ( FactRaceResults, FactRaceResults[FinishPosition] <= 10 ),
     FactRaceResults[Points]
 )
-// FIXED: the original iterated FILTER(ALL(FactRaceResults[FinishPosition]), ...) — a
-// table of only ~10 distinct position VALUES — and averaged the [Total Points] MEASURE
-// per position. That computes the average of ten highly-aggregated sums (total points
-// scored league-wide by everyone who ever finished P1, P2, etc.), which is not a
-// meaningful "expected points for a driver who avoided a DNF." This version iterates
-// actual result rows with FinishPosition <= 10 and averages the row-level Points column
-// directly — the average points value of a single top-10 finish, which is what "Expected
-// Points If Finished" is supposed to represent.
-// Simplified proxy for "what a mid-pack finish would have scored" — feeds Points Cost of DNF.
+
 
 34. Points Cost of DNF =
 [Total DNFs] * [Expected Points If Finished]
-// KPI #27. An estimate, documented as such — real modeling would use each driver's
-// pre-DNF running position rather than a flat average.
 
 35. Season Parity Index =
 VAR DistinctWinners =
@@ -271,12 +235,9 @@ DIVIDE ( DistinctWinners, [Total Races] )
 ```dax
 36. Points YTD =
 TOTALYTD ( [Total Points], DimDate[Date] )
-// FIXED: was TOTALYTD([Total Points], DimRace[Date]) — see the model prerequisite
-// note above. Requires DimDate to exist and be marked as the Date Table.
 
 37. Points Prior Season =
 CALCULATE ( [Total Points], SAMEPERIODLASTYEAR ( DimDate[Date] ) )
-// FIXED: same DimRace[Date] → DimDate[Date] correction as #36.
 
 38. Points YoY Change % =
 DIVIDE ( [Total Points] - [Points Prior Season], [Points Prior Season] )
@@ -292,19 +253,12 @@ VAR Last5Races =
     )
 RETURN
 CALCULATE ( AVERAGE ( FactRaceResults[Points] ), Last5Races )
-// This one is fine as-is on DimRace[Date] — TOPN/FILTER are ordinary table functions,
-// not time intelligence functions, so they don't need a contiguous calendar. No fix
-// needed here; included for contrast with #36/#37/#40 above/below.
-// Drives the Page 1/Page 2 momentum trend line.
 
 40. Rolling 3-Season Avg Finish =
 CALCULATE (
     [Avg Finish Position],
     DATESINPERIOD ( DimDate[Date], MAX ( DimDate[Date] ), -3, YEAR )
 )
-// FIXED: was DATESINPERIOD(DimRace[Date], ...) — same calendar-table requirement as
-// #36/#37. Also removed an unused `CurrentSeason` variable that was never referenced
-// in the original — dead code, not a functional bug, but cleaned up here.
 
 41. Development Trajectory Score =
 VAR ThisSeasonAvg = [Avg Finish Position]
@@ -315,9 +269,6 @@ VAR ThreeSeasonsAgoAvg =
     )
 RETURN
 ThreeSeasonsAgoAvg - ThisSeasonAvg
-// Fine as-is: DimRace[Season] = <value> is an ordinary equality filter, not a time
-// intelligence function, so it doesn't need DimDate.
-// KPI #30. Positive = finishing position has improved (lower number) over 3 seasons.
 ```
 
 ## Folder: Pit Stop & Strategy
@@ -338,19 +289,9 @@ DIVIDE (
 
 45. Pit Stop Duration StdDev =
 DIVIDE ( STDEV.P ( FactPitStops[DurationMs] ), 1000 )
-// This measures EXECUTION variance (how consistent the crew's stop times are), not
-// STRATEGIC WINDOW variance — see #45b below for KPI #17, which was previously
-// (incorrectly) attributed to this measure.
 
 45b. Pit Window Variance (Lap) =
 STDEV.P ( FactPitStops[Lap] )
-// FIXED / ADDED: KPI #17 (Average Pit Window Variance) is defined as "StdDev of Pit
-// Stop Lap by Circuit" — i.e. how spread out the LAP NUMBER stops happen on, which
-// tells you how predictable/exploitable a circuit's pit window is. #45 above measures
-// STDEV of DurationMs (how long the stop takes), which is a completely different thing
-// and was incorrectly cited as feeding KPI #17. This measure uses FactPitStops[Lap]
-// instead, which is what KPI #17 actually asks for. Apply at circuit-level grain
-// (filtered by DimCircuit) for the intended use on Dashboard Page 5.
 
 46. Total Pit Stops =
 COUNTROWS ( FactPitStops )
@@ -377,17 +318,6 @@ DIVIDE (
     COUNTROWS ( FILTER ( MultiStopRaceResults, FactRaceResults[IsWin] = TRUE ) ),
     COUNTROWS ( MultiStopRaceResults )
 )
-// FIXED: the original filtered FactRaceResults using
-// FILTER(FactRaceResults, CALCULATE(COUNTROWS(FactPitStops)) >= 2) — but FactPitStops
-// and FactRaceResults have no direct relationship (see docs/Data_Dictionary.md: fact
-// tables only connect through DimRace/DimDriver). Row-context transition on
-// FactRaceResults only propagates through an ACTIVE relationship; since there isn't
-// one straight to FactPitStops, COUNTROWS(FactPitStops) would evaluate the same for
-// every row instead of per race-driver, making the filter meaningless. This version
-// builds the RaceID+DriverID pairs with 2+ stops directly from FactPitStops via
-// SUMMARIZE, then bridges them onto FactRaceResults with TREATAS — the same pattern
-// used to fix Pole to Win Rate (#26) above.
-// KPI #28.
 ```
 
 ## Folder: Dynamic Titles & UX
@@ -459,14 +389,6 @@ IF (
         & " (" & FORMAT ( LeaderWinRate, "0%" ) & " win rate)." & MomentumText
 )
 // Powers the Page 1 (Executive Overview) insight text box — see docs/Dashboard_Design.md.
-// Built entirely from existing measures (#7 Total Points, #5 Win Rate, #39 Rolling
-// 5-Race Points Avg) rather than new logic, so it stays consistent if any of those are
-// retuned later. ALLSELECTED (not ALL) keeps this respecting the Season slicer while
-// still ranking across the full driver field, same pattern as #12. Two defensive
-// guards worth noting: the outer IF(ISBLANK(...)) handles an empty selection (e.g. a
-// season with no results loaded yet), and the SecondName ISBLANK check inside GapText
-// handles the case where a driver slicer narrows the field to a single driver, at
-// which point "gap to second" has no meaning.
 ```
 
 ---
@@ -511,14 +433,6 @@ VAR FastestConstructorPace = MINX ( ConstructorPaces, [ConstructorAvgPace] )
 VAR SlowestConstructorPace = MAXX ( ConstructorPaces, [ConstructorAvgPace] )
 RETURN
 DIVIDE ( SlowestConstructorPace - FastestConstructorPace, FastestConstructorPace )
-// KPI #25. Feeds Dashboard Page 3's "Competitive spread by circuit type" chart.
-// FactLapTimes has no direct relationship to DimConstructor (constructor is only on
-// FactRaceResults, and lap times relate to DimRace/DimDriver, not to FactRaceResults —
-// see docs/Data_Dictionary.md), so this uses the same SUMMARIZE + TREATAS bridging
-// pattern as #26/#48: for each constructor, pull the RaceID+DriverID pairs that drove
-// for them (from FactRaceResults, via context transition on the ADDCOLUMNS row), then
-// push those onto FactLapTimes to compute that constructor's average pace. Depends on
-// #51 (Avg Race Pace) — build that one first.
 ```
 
 ---
@@ -534,14 +448,6 @@ IF (
     SELECTEDVALUE ( FactDriverSeasonStats[TeammatePointsDelta] ),
     BLANK ()
 )
-// FIXED / ADDED: was being used as a raw column in a card (see Page 2 in
-// docs/Dashboard_Design.md, previously marked "imported feature column, not DAX").
-// Without this guard, selecting a driver but not a season sums TeammatePointsDelta
-// across their whole career — positive and negative seasons cancel out, which is
-// almost certainly the cause of the near-zero values reported across ~20-30 drivers.
-// SELECTEDVALUE returns BLANK if more than one row still matches after both filters
-// (e.g. a driver who changed constructors mid-season, leaving 2 rows for one season) —
-// that's a rarer edge case worth knowing about but not the main fix here.
 
 55. Teammate Grid Delta =
 IF (
@@ -557,9 +463,6 @@ IF (
     SELECTEDVALUE ( FactDriverSeasonStats[TeammateQualifyingDelta] ),
     BLANK ()
 )
-// Same guard pattern as #54, applied to the qualifying-pace teammate comparison
-// (KPI #15) — this is the one that isolates true one-lap pace, per the
-// GridPosition vs QualifyingPosition distinction elsewhere in this library.
 
 57. Teammate Comparison Context Warning =
 IF (
@@ -567,11 +470,6 @@ IF (
     "Select a single season to see this driver's teammate comparison — these values are season-specific and don't sum meaningfully across a career.",
     BLANK ()
 )
-// Optional companion measure: bind this to a text box near the teammate KPI cards on
-// Page 2. Shows a warning only in the exact situation that causes the bug above
-// (driver selected, season not) — silent otherwise, so it doesn't clutter the page
-// once a season is selected. Cheaper than hoping every viewer remembers to also
-// filter by season.
 
 63. Selected Driver Season Points =
 IF (
@@ -600,11 +498,6 @@ IF (
     SELECTEDVALUE ( FactDriverSeasonStats[TeammateAvgQualifyingPosition] ),
     BLANK ()
 )
-// #63-66 are the raw building blocks for the Page 2 "Teammate head-to-head" chart —
-// each is a guarded SELECTEDVALUE off FactDriverSeasonStats, same season/driver guard
-// pattern as #54-57. On their own they're not chart-ready (a clustered bar needs one
-// axis with two category values, not two separate measures) — #67/#68 below wrap
-// these into a single switchable measure using a small disconnected table.
 
 67. Teammate Compare - Points =
 SWITCH (
@@ -621,20 +514,6 @@ SWITCH (
     "Teammate", [Selected Driver's Teammate Avg Qualifying Position],
     BLANK ()
 )
-// #67/#68 require a small disconnected table called TeammateCompareAxis with a single
-// text column [Role] containing exactly two rows: "Selected Driver" and "Teammate".
-// Add it via Get Data -> Blank Query (same mechanism as powerbi/Additional_PowerBI_Tables.md):
-//   let
-//       Source = #table({"Role"}, {{"Selected Driver"}, {"Teammate"}})
-//   in
-//       Source
-// This table has NO relationship to anything else in the model — it exists purely to
-// give a clustered bar chart two axis categories to switch a measure on. Put
-// TeammateCompareAxis[Role] on the chart's Axis well and #67 (or #68) on Values; the
-// chart will show exactly two bars, correctly comparing whoever is currently selected
-// in the DimDriver/DimSeason slicers against their teammate. This is the standard DAX
-// pattern for "compare two named things side by side" when the two things being
-// compared are values on the same row rather than separate rows in a table.
 ```
 
 ---
@@ -653,18 +532,6 @@ IF (
     BLANK (),
     [Avg Finish Position] - HomeRaceAvgFinish
 )
-// KPI-adjacent measure for Page 3. Positive = performs better at home than average
-// (lower finish position at the home race); negative = worse.
-// REQUIRES a small manual mapping table, ConstructorHomeCountry (ConstructorName,
-// Country), added the same way as ConstructorColors in
-// powerbi/Additional_PowerBI_Tables.md. This can't be derived automatically:
-// DimConstructor[Nationality] is a demonym string ("British", "Italian") from
-// constructors.csv, and DimCircuit[Country] is a country name string ("UK", "Italy")
-// from circuits.csv — these don't reliably match as text (e.g. "British" vs "UK" /
-// "Great Britain"), so a manual lookup is the honest fix rather than a fragile string
-// match. Populate ConstructorHomeCountry with entries for the current 10-team grid at
-// minimum; historical constructors without an entry return BLANK() rather than a wrong
-// number, same fallback philosophy as the color mapping.
 ```
 
 ---
@@ -684,10 +551,6 @@ CALCULATE (
     DimRace[Season] = CurrentSeason,
     DimRace[Round] <= CurrentRound
 )
-// Page 1 standings line chart. Running total of points within the selected season, by
-// round — ALLSELECTED(DimRace[Round]) clears the specific-round context a line chart
-// puts each point in so every point can see "all rounds up to and including this one,"
-// while the explicit Season/Round equality keeps it from also picking up other seasons.
 
 59. Entered Q1 =
 COUNTROWS ( FactQualifying )
@@ -697,9 +560,6 @@ CALCULATE ( COUNTROWS ( FactQualifying ), FactQualifying[EliminatedInQ1] = FALSE
 
 61. Advanced to Q3 =
 CALCULATE ( COUNTROWS ( FactQualifying ), FactQualifying[EliminatedInQ2] = FALSE )
-// #59-61: Page 4 funnel chart stages. Drop all three directly into the funnel visual's
-// Values well as separate measures (funnel charts accept multiple measures as stages
-// natively) — no disconnected table needed for this one.
 
 69. Win Rate by Stop Count Bucket =
 VAR SelectedBucket = SELECTEDVALUE ( StopCountBucketAxis[Bucket] )
@@ -723,27 +583,13 @@ DIVIDE (
     COUNTROWS ( FILTER ( BucketRaceResults, FactRaceResults[IsWin] = TRUE ) ),
     COUNTROWS ( BucketRaceResults )
 )
-// Page 5 strategy win-rate chart. Generalizes the same SUMMARIZE + TREATAS bridging
-// pattern from #48 (Multi-Stop Race Win Rate) into three selectable buckets instead of
-// one fixed ">=2" threshold. REQUIRES a disconnected StopCountBucketAxis table:
-//   let
-//       Source = #table({"Bucket"}, {{"1-Stop"}, {"2-Stop"}, {"3+-Stop"}})
-//   in
-//       Source
-// Put StopCountBucketAxis[Bucket] on the chart's Axis well, this measure on Values.
+
 
 70. Fastest Lap Time This Lap =
 CALCULATE ( MIN ( FactLapTimes[LapTimeMs] ), ALLSELECTED ( DimDriver ) )
 
 71. Slowest Lap Time This Lap =
 CALCULATE ( MAX ( FactLapTimes[LapTimeMs] ), ALLSELECTED ( DimDriver ) )
-// Page 6 field pace spread area chart. With FactLapTimes[Lap] on the X-axis, these give
-// the fastest/slowest lap time set by ANY driver on that lap — ALLSELECTED(DimDriver)
-// deliberately ignores the page's driver multi-select (which highlights specific lines
-// on the main lap-trend chart) so this spread reflects the WHOLE field regardless of
-// which drivers are highlighted elsewhere on the page, while still respecting the
-// Race slicer that both charts share. Plot as a band: Slowest as the area's upper
-// bound, Fastest as the lower bound (Power BI area/ribbon chart with two measures).
 ```
 
 ---
@@ -767,12 +613,6 @@ MEDIAN ( FactRaceResults[FinishPosition] )
 
 76. Finish Position Range (Floating Bar Height) =
 [Max Finish Position] - [Min Finish Position]
-// #72-76: Page 2 consistency chart. Stack #75 then #76 on a Stacked Column Chart with
-// DimDriver[FullName] on Axis — #75's series color set to fully transparent (Format
-// visual -> Data colors) makes it invisible, leaving only #76 visible as a floating
-// bar spanning each driver's min-to-max finish position for the season. Add #74 via
-// "Line and Stacked Column Chart" (native combo) to overlay the median as a line
-// marker on the same categories.
 
 77. Min Pit Stop Duration (s) =
 DIVIDE ( MIN ( FactPitStops[DurationMs] ), 1000 )
@@ -788,9 +628,6 @@ DIVIDE ( MEDIAN ( FactPitStops[DurationMs] ), 1000 )
 
 81. Pit Stop Duration Range (Floating Bar Height) =
 [Max Pit Stop Duration (s)] - [Min Pit Stop Duration (s)]
-// #77-81: Page 5 duration chart. Same floating-bar technique as #72-76, with
-// DimConstructor[ConstructorName] on Axis instead of driver. #79 (median) overlays
-// as the combo line, same as #74 above.
 ```
 
 ---
