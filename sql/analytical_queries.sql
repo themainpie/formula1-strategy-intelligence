@@ -20,7 +20,10 @@ JOIN fact_race_results f
 WHERE q.qualifying_position IS NOT NULL
 GROUP BY q.qualifying_position
 ORDER BY q.qualifying_position;
-
+ 
+-- Same question on the post-penalty starting grid.
+-- grid_position = 0 means no regular grid slot (e.g. pit-lane start),
+-- so it is excluded to keep the win-rate table clean.
 SELECT
     grid_position,
     COUNT(*) AS races_started_from_grid,
@@ -28,7 +31,7 @@ SELECT
     ROUND(100.0 * SUM(CASE WHEN finish_position = 1 THEN 1 ELSE 0 END)
           / COUNT(*), 2) AS win_rate_pct
 FROM fact_race_results
-WHERE grid_position IS NOT NULL
+WHERE grid_position > 0
 GROUP BY grid_position
 ORDER BY grid_position;
 
@@ -75,6 +78,12 @@ ORDER BY teammate_beat_rate_pct DESC, seasons_with_teammate DESC;
 -- Q3. Which circuits reward aggressive (multi-stop) pit strategies?
 --     (Business Question #16) — CTE + join to derive stop counts
 --     per driver per race, then aggregate by circuit
+--
+--     Restricted to the pit-stop data era (1996 onwards) and to
+--     drivers who made at least one stop, so "0 stops" no longer
+--     mixes missing data and early retirements with real strategies.
+--     Correlation only: extra stops are often forced by incidents
+--     or car pace rather than chosen.
 -- --------------------------------------------------------------
 WITH stops_per_race AS (
     SELECT race_id, driver_id, COUNT(*) AS stop_count
@@ -86,12 +95,15 @@ result_with_stops AS (
         r.race_id,
         r.driver_id,
         r.finish_position,
-        COALESCE(s.stop_count, 0) AS stop_count,
+        s.stop_count,
         dr.circuit_id
     FROM fact_race_results r
     JOIN dim_race dr ON dr.race_id = r.race_id
-    LEFT JOIN stops_per_race s
+    JOIN stops_per_race s
         ON s.race_id = r.race_id AND s.driver_id = r.driver_id
+    WHERE dr.season >= 1996            -- pit-stop data era
+      AND s.stop_count >= 1
+      AND r.finish_position IS NOT NULL
 )
 SELECT
     c.circuit_name,
@@ -100,9 +112,8 @@ SELECT
     ROUND(AVG(rs.finish_position), 2) AS avg_finish_position
 FROM result_with_stops rs
 JOIN dim_circuit c ON c.circuit_id = rs.circuit_id
-WHERE rs.finish_position IS NOT NULL
 GROUP BY c.circuit_name, rs.stop_count
-HAVING COUNT(*) >= 5   -- suppress low-sample noise
+HAVING COUNT(*) >= 10                  -- suppress low-sample noise
 ORDER BY c.circuit_name, rs.stop_count;
 
 -- --------------------------------------------------------------
@@ -167,8 +178,8 @@ GROUP BY c.circuit_name
 ORDER BY avg_positions_gained_post_stop DESC;
 
 -- --------------------------------------------------------------
--- Q6. Season parity index: distinct winners / total races per
---     season (Business Question #49)
+-- Q6a. Season parity index: distinct winners / total races per
+--      season (Business Question #49)
 -- --------------------------------------------------------------
 SELECT
     r.season,
@@ -180,3 +191,31 @@ FROM fact_race_results f
 JOIN dim_race r ON r.race_id = f.race_id
 GROUP BY r.season
 ORDER BY r.season;
+ 
+-- --------------------------------------------------------------
+-- Q6b. Season parity index rolled up by decade
+--      (Business Question #49) — builds on Q6a via a CTE.
+--      The current season is excluded because it is incomplete.
+-- --------------------------------------------------------------
+WITH season_parity AS (
+    SELECT
+        r.season,
+        COUNT(DISTINCT r.race_id) AS total_races,
+        COUNT(DISTINCT CASE WHEN f.finish_position = 1 THEN f.driver_id END) AS distinct_winners,
+        ROUND(1.0 * COUNT(DISTINCT CASE WHEN f.finish_position = 1 THEN f.driver_id END)
+              / COUNT(DISTINCT r.race_id), 3) AS parity_index
+    FROM fact_race_results f
+    JOIN dim_race r ON r.race_id = f.race_id
+    GROUP BY r.season
+)
+SELECT
+    (CAST(season AS INTEGER) / 10) * 10 AS decade,
+    COUNT(*) AS seasons_in_decade,
+    SUM(total_races) AS total_races,
+    ROUND(AVG(parity_index), 3) AS avg_parity_index,
+    MIN(parity_index) AS lowest_parity,
+    MAX(parity_index) AS highest_parity
+FROM season_parity
+WHERE season < 2026
+GROUP BY (CAST(season AS INTEGER) / 10) * 10
+ORDER BY decade;
